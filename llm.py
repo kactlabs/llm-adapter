@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 from dotenv import load_dotenv
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from bs4 import BeautifulSoup
 
 # Load environment variables from .env file
@@ -100,6 +101,25 @@ class LlamaCppAdapter(LLMAdapter):
         )
 
 
+class GeminiAdapter(LLMAdapter):
+    """Adapter for Google Gemini LLM provider"""
+    
+    def get_client(self):
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY environment variable is not set")
+        
+        model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        
+        return ChatGoogleGenerativeAI(
+            google_api_key=api_key,
+            model=model,
+            temperature=0.7,
+            max_tokens=512,
+            timeout=120
+        )
+
+
 # Factory Pattern - Creates appropriate LLM adapter based on provider
 class LLMFactory:
     """Factory for creating LLM adapters based on provider type"""
@@ -108,6 +128,7 @@ class LLMFactory:
         "ollama": OllamaAdapter,
         "openai": OpenAIAdapter,
         "llama.cpp": LlamaCppAdapter,
+        "gemini": GeminiAdapter,
     }
     
     @classmethod
