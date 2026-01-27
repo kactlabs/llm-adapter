@@ -3,10 +3,14 @@
 Simple CLI Chatbot using LLM Factory with LangChain
 """
 
+import warnings
+# Suppress FutureWarning from google.generativeai (internal to langchain-google-genai)
+warnings.filterwarnings('ignore', category=FutureWarning, module='langchain_google_genai')
+
 from llm import get_llm
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationChain
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory
 
 
 def main():
@@ -19,29 +23,24 @@ def main():
     # Initialize LLM
     llm = get_llm()
     
-    # Setup LangChain memory
-    memory = ConversationBufferMemory()
+    # Setup message history
+    chat_history = InMemoryChatMessageHistory()
     
     # Create prompt template for one-line answers
-    template = """The following is a conversation between a human and an AI assistant. 
-The AI provides concise one-line answers only.
-
-Current conversation:
-{history}
-Human: {input}
-AI:"""
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful AI assistant that provides concise one-line answers only."),
+        MessagesPlaceholder(variable_name="history"),
+        ("human", "{input}")
+    ])
     
-    prompt = PromptTemplate(
-        input_variables=["history", "input"],
-        template=template
-    )
+    # Create chain with message history
+    chain = prompt | llm
     
-    # Create conversation chain
-    conversation = ConversationChain(
-        llm=llm,
-        memory=memory,
-        prompt=prompt,
-        verbose=False
+    conversation = RunnableWithMessageHistory(
+        chain,
+        lambda session_id: chat_history,
+        input_messages_key="input",
+        history_messages_key="history"
     )
     
     # Chat loop
@@ -56,8 +55,11 @@ AI:"""
             continue
         
         try:
-            response = conversation.predict(input=user_input)
-            print(f"Bot: {response}\n")
+            response = conversation.invoke(
+                {"input": user_input},
+                config={"configurable": {"session_id": "default"}}
+            )
+            print(f"Bot: {response.content}\n")
         except Exception as e:
             print(f"Error: {e}\n")
 
