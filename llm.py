@@ -1,5 +1,3 @@
-# pylint: disable=missing-function-docstring, pointless-string-statement, missing-class-docstring
-
 """
 @author: Raja CSP Raman
 
@@ -12,9 +10,6 @@ import requests
 import re
 from abc import ABC, abstractmethod
 from dotenv import load_dotenv
-from langchain_ollama import ChatOllama
-from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
 from bs4 import BeautifulSoup
 
 # Load environment variables from .env file
@@ -36,6 +31,8 @@ class OllamaAdapter(LLMAdapter):
     """Adapter for Ollama LLM provider"""
     
     def get_client(self):
+        from langchain_ollama import ChatOllama
+        
         model = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
         
         return ChatOllama(
@@ -50,6 +47,8 @@ class OpenAIAdapter(LLMAdapter):
     """Adapter for OpenAI LLM provider"""
     
     def get_client(self):
+        from langchain_openai import ChatOpenAI
+        
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
@@ -66,7 +65,7 @@ class OpenAIAdapter(LLMAdapter):
 
 
 class LlamaCppAdapter(LLMAdapter):
-    """Adapter for llama.cpp LLM provider"""
+    """Adapter for llama.cpp LLM provider (direct HTTP, no langchain-openai dependency)"""
     
     def __init__(self, base_url="http://127.0.0.1:8080/v1"):
         self.base_url = base_url
@@ -88,23 +87,55 @@ class LlamaCppAdapter(LLMAdapter):
                 return False
     
     def get_client(self):
+        """Return a simple HTTP client wrapper for llama.cpp"""
         if not self._check_server_health():
             raise ConnectionError(f"llama.cpp server is not running at {self.base_url}. Please start your llama.cpp server first.")
         
-        return ChatOpenAI(
-            base_url=self.base_url,
-            api_key="local-llama",  # Required by interface, ignored by llama.cpp
-            model="llama.cpp",      # Name is ignored by server
-            temperature=0.6,
-            max_tokens=600,
-            timeout=180  # Increased timeout to 180 seconds for local models
-        )
+        # Return a simple wrapper that mimics langchain interface
+        return LlamaCppClient(self.base_url)
+
+
+class LlamaCppClient:
+    """Simple HTTP client for llama.cpp that mimics langchain interface"""
+    
+    def __init__(self, base_url):
+        self.base_url = base_url
+    
+    def invoke(self, prompt):
+        """Send request to llama.cpp server"""
+        try:
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.7,
+                    "max_tokens": 512
+                },
+                timeout=180
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            # Extract content from response
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            
+            # Return object with content attribute (like langchain)
+            class Response:
+                def __init__(self, content):
+                    self.content = content
+            
+            return Response(content)
+            
+        except Exception as e:
+            raise Exception(f"llama.cpp request failed: {e}")
 
 
 class GeminiAdapter(LLMAdapter):
     """Adapter for Google Gemini LLM provider"""
     
     def get_client(self):
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY environment variable is not set")
@@ -153,22 +184,9 @@ def get_llm():
     provider = os.getenv("LLM_PROVIDER", "ollama")
     print(f"Using LLM provider: {provider}")
     
-    try:
-        adapter = LLMFactory.create_adapter(provider)
-        print(f"Successfully created adapter for: {provider}")
-        return adapter.get_client()
-    except ConnectionError as e:
-        print(f"Connection Error: {e}")
-        print("Falling back to default Ollama provider")
-        return OllamaAdapter().get_client()
-    except ValueError as e:
-        print(f"Configuration Error: {e}")
-        print("Falling back to default Ollama provider")
-        return OllamaAdapter().get_client()
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        print("Falling back to default Ollama provider")
-        return OllamaAdapter().get_client()
+    adapter = LLMFactory.create_adapter(provider)
+    print(f"Successfully created adapter for: {provider}")
+    return adapter.get_client()
 
 
 # Tool Calling Functions
