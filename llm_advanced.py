@@ -7,8 +7,10 @@ source:
 
 import os
 import requests
+import re
 from abc import ABC, abstractmethod
 from dotenv import load_dotenv
+from bs4 import BeautifulSoup
 
 # Load environment variables from .env file
 load_dotenv()
@@ -188,7 +190,176 @@ def get_llm():
 
 
 # Tool Calling Functions
+def detect_url_in_instructions(instructions: str) -> str:
+    """
+    Detect if instructions contain a URL
+    
+    Args:
+        instructions: User instructions text
+        
+    Returns:
+        URL string if found, None otherwise
+    """
+    if not instructions:
+        return None
+    
+    url_pattern = r'https?://[^\s]+'
+    match = re.search(url_pattern, instructions)
+    return match.group(0) if match else None
 
 
+def fetch_content_from_url(url: str) -> dict:
+    """
+    Fetch and parse content from URL using BeautifulSoup
+    
+    Args:
+        url: URL to fetch content from
+        
+    Returns:
+        dict with 'success', 'content', 'error' keys
+    """
+    try:
+        print(f"📡 Fetching content from: {url}")
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, timeout=15, headers=headers)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Remove unwanted elements
+        for element in soup(["script", "style", "nav", "footer", "header", "aside", "iframe"]):
+            element.decompose()
+        
+        # Try to find main content areas
+        content_areas = soup.find_all(
+            ['article', 'main', 'div'], 
+            class_=lambda x: x and any(keyword in x.lower() for keyword in ['content', 'article', 'post', 'entry', 'body'])
+        )
+        
+        if not content_areas:
+            # Fallback to body or entire document
+            content_areas = [soup.body] if soup.body else [soup]
+        
+        text_content = []
+        
+        for area in content_areas:
+            # Extract headings
+            for heading in area.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+                heading_text = heading.get_text(strip=True)
+                if heading_text:
+                    text_content.append(f"\n## {heading_text}\n")
+            
+            # Extract paragraphs
+            for para in area.find_all('p'):
+                para_text = para.get_text(strip=True)
+                if para_text and len(para_text) > 10:  # Filter out very short paragraphs
+                    text_content.append(para_text)
+            
+            # Extract code blocks
+            for code in area.find_all(['pre', 'code']):
+                code_text = code.get_text(strip=True)
+                if code_text:
+                    text_content.append(f"\n```\n{code_text}\n```\n")
+            
+            # Extract list items
+            for ul in area.find_all(['ul', 'ol']):
+                for li in ul.find_all('li', recursive=False):
+                    li_text = li.get_text(strip=True)
+                    if li_text:
+                        text_content.append(f"• {li_text}")
+        
+        # Join and clean content
+        full_content = "\n".join(text_content)
+        
+        # Remove excessive whitespace
+        full_content = re.sub(r'\n{3,}', '\n\n', full_content)
+        full_content = full_content.strip()
+        
+        if not full_content or len(full_content) < 100:
+            return {
+                'success': False,
+                'content': None,
+                'error': 'Insufficient content extracted from URL'
+            }
+        
+        print(f"✅ Successfully fetched {len(full_content)} characters")
+        
+        return {
+            'success': True,
+            'content': full_content,
+            'error': None
+        }
+        
+    except requests.exceptions.Timeout:
+        error_msg = f"Timeout while fetching URL: {url}"
+        print(f"❌ {error_msg}")
+        return {'success': False, 'content': None, 'error': error_msg}
+        
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Request error: {str(e)}"
+        print(f"❌ {error_msg}")
+        return {'success': False, 'content': None, 'error': error_msg}
+        
+    except Exception as e:
+        error_msg = f"Error parsing content: {str(e)}"
+        print(f"❌ {error_msg}")
+        return {'success': False, 'content': None, 'error': error_msg}
 
+
+def process_instructions_with_url(instructions: str) -> dict:
+    """
+    Process instructions and fetch content if URL is detected
+    
+    Args:
+        instructions: User instructions text
+        
+    Returns:
+        dict with 'has_url', 'url', 'content', 'enhanced_instructions' keys
+    """
+    url = detect_url_in_instructions(instructions)
+    
+    if not url:
+        return {
+            'has_url': False,
+            'url': None,
+            'content': None,
+            'enhanced_instructions': instructions
+        }
+    
+    print(f"🔍 URL detected in instructions: {url}")
+    
+    result = fetch_content_from_url(url)
+    
+    if result['success']:
+        # Limit content size for LLM context (keep first 3000 chars)
+        content = result['content']
+        if len(content) > 3000:
+            content = content[:3000] + "\n\n[Content truncated for length...]"
+        
+        enhanced_instructions = f"""Content fetched from: {url}
+
+KNOWLEDGE BASE CONTENT:
+{content}
+
+Generate quiz questions based on the above content."""
+        
+        return {
+            'has_url': True,
+            'url': url,
+            'content': result['content'],
+            'enhanced_instructions': enhanced_instructions
+        }
+    else:
+        print(f"⚠️ Failed to fetch content: {result['error']}")
+        print(f"📝 Using original instructions")
+        
+        return {
+            'has_url': True,
+            'url': url,
+            'content': None,
+            'enhanced_instructions': instructions
+        }
 
