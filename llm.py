@@ -177,21 +177,6 @@ class LLMFactory:
         cls._adapters[provider] = adapter_class
 
 
-def get_llm_info():
-    """Get current LLM provider and model info from environment configuration"""
-    provider = os.getenv("LLM_PROVIDER", "ollama").lower().strip()
-    
-    model_map = {
-        "ollama": lambda: os.getenv("OLLAMA_MODEL", "llama3.2:3b"),
-        "openai": lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        "llama.cpp": lambda: "llama.cpp local",
-        "gemini": lambda: os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
-    }
-    
-    model = model_map.get(provider, lambda: "unknown")()
-    return {"provider": provider, "model": model}
-
-
 def get_llm():
     """Get LLM client based on environment configuration"""
     provider = os.getenv("LLM_PROVIDER", "ollama")
@@ -200,6 +185,37 @@ def get_llm():
     adapter = LLMFactory.create_adapter(provider)
     print(f"Successfully created adapter for: {provider}")
     return adapter.get_client()
+
+
+def get_llm_info():
+    """Get current LLM provider and model info"""
+    provider = os.getenv("LLM_PROVIDER", "ollama")
+    if provider == "ollama":
+        model = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+    elif provider == "openai":
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    elif provider == "gemini":
+        model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    elif provider == "llama.cpp":
+        model = _get_llamacpp_model()
+    else:
+        model = "unknown"
+    return {"provider": provider, "model": model}
+
+
+def _get_llamacpp_model():
+    """Get model name from llama.cpp server's /models endpoint"""
+    base_url = os.getenv("LLAMA_CPP_URL", "http://127.0.0.1:8080/v1")
+    try:
+        response = requests.get(f"{base_url}/models", timeout=3)
+        if response.status_code == 200:
+            data = response.json()
+            models = data.get("data", [])
+            if models:
+                return models[0].get("id", "llama.cpp local")
+    except Exception:
+        pass
+    return os.getenv("LLAMA_CPP_MODEL", "llama.cpp local")
 
 
 # Tool Calling Functions
