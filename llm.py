@@ -177,6 +177,21 @@ class LLMFactory:
         cls._adapters[provider] = adapter_class
 
 
+def get_llm_info():
+    """Get current LLM provider and model info from environment configuration"""
+    provider = os.getenv("LLM_PROVIDER", "ollama").lower().strip()
+    
+    model_map = {
+        "ollama": lambda: os.getenv("OLLAMA_MODEL", "llama3.2:3b"),
+        "openai": lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        "llama.cpp": lambda: "llama.cpp local",
+        "gemini": lambda: os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+    }
+    
+    model = model_map.get(provider, lambda: "unknown")()
+    return {"provider": provider, "model": model}
+
+
 def get_llm():
     """Get LLM client based on environment configuration"""
     provider = os.getenv("LLM_PROVIDER", "ollama")
