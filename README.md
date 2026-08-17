@@ -24,3 +24,5 @@ See `requirements.txt` for dependencies.
 
 ### Screenshots
 ![1769482515781](image/README/1769482515781.png)
+
+![1786932030074](image/README/1786932030074.png)

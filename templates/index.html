@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM Chat</title>
+  <link rel="stylesheet" href="/static/css/main.css" />
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">LLM Chat</div>
+
+  <div class="container">
+    <!-- Input Card -->
+    <div class="search-card">
+      <h2>Ask the LLM</h2>
+      <form method="post" action="/">
+        <label class="form-label" for="userInput">Enter your prompt</label>
+        <textarea
+          id="userInput"
+          name="user_input"
+          class="form-input form-textarea"
+          placeholder="Type your question here..."
+          rows="4"
+        >{{ user_input }}</textarea>
+        <div class="btn-row">
+          <button type="submit" class="btn btn-primary">🚀 Send</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Error Card -->
+    {% if error %}
+    <div class="results-card error-card">
+      <h3 class="results-title">⚠️ Error</h3>
+      <p class="error-text">{{ error }}</p>
+    </div>
+    {% endif %}
+
+    <!-- Results Card -->
+    {% if llm_response %}
+    <div class="results-card">
+      <h3 class="results-title">🤖 LLM Response</h3>
+      <div class="response-text">{{ llm_response }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    LLM Chat &copy; 2026
+  </footer>
+</body>
+</html>
