@@ -174,6 +174,27 @@ class GeminiAdapter(LLMAdapter):
         )
 
 
+class GroqAdapter(LLMAdapter):
+    """Adapter for Groq LLM provider"""
+    
+    def get_client(self):
+        from langchain_groq import ChatGroq
+        
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY environment variable is not set")
+        
+        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        
+        return ChatGroq(
+            api_key=api_key,
+            model=model,
+            temperature=0.7,
+            max_tokens=512,
+            timeout=120
+        )
+
+
 # Factory Pattern - Creates appropriate LLM adapter based on provider
 class LLMFactory:
     """Factory for creating LLM adapters based on provider type"""
@@ -183,6 +204,7 @@ class LLMFactory:
         "openai": OpenAIAdapter,
         "llama.cpp": LlamaCppAdapter,
         "gemini": GeminiAdapter,
+        "groq": GroqAdapter,
     }
     
     @classmethod
@@ -205,17 +227,33 @@ class LLMFactory:
 def get_llm():
     """Get LLM client based on environment configuration"""
     provider = os.getenv("LLM_PROVIDER", "ollama")
-    print(f"\n{'='*60}")
-    print(f"[DEBUG][get_llm] Provider: {provider}")
-    print(f"[DEBUG][get_llm] OLLAMA_MODEL env: {os.getenv('OLLAMA_MODEL', 'NOT SET')}")
-    print(f"[DEBUG][get_llm] OLLAMA_BASE_URL env: {os.getenv('OLLAMA_BASE_URL', 'NOT SET')}")
-    print(f"{'='*60}\n")
+    print(f"Using LLM provider: {provider}")
     
     adapter = LLMFactory.create_adapter(provider)
-    print(f"[DEBUG][get_llm] Adapter created: {type(adapter).__name__}")
-    client = adapter.get_client()
-    print(f"[DEBUG][get_llm] Client ready: {type(client).__name__}")
-    return client
+    print(f"Successfully created adapter for: {provider}")
+    return adapter.get_client()
+
+
+def get_llm_for_provider(provider: str):
+    """Get LLM client for a specific provider (used for per-user settings)"""
+    adapter = LLMFactory.create_adapter(provider)
+    return adapter.get_client()
+
+
+def get_llm_for_user(user_id: str):
+    """Get LLM client based on user's saved preference, fallback to .env default"""
+    from utils.database_utils import get_mongo_manager
+    mongo = get_mongo_manager()
+    
+    # Check user's preference
+    pref = mongo.db['user_preferences'].find_one({"user_id": user_id, "key": "llm_provider"})
+    if pref and pref.get("value"):
+        provider = pref["value"]
+    else:
+        provider = os.getenv("LLM_PROVIDER", "ollama")
+    
+    adapter = LLMFactory.create_adapter(provider)
+    return adapter.get_client()
 
 
 def get_llm_info():
@@ -227,6 +265,34 @@ def get_llm_info():
         model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     elif provider == "gemini":
         model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    elif provider == "groq":
+        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    elif provider == "llama.cpp":
+        model = _get_llamacpp_model()
+    else:
+        model = "unknown"
+    return {"provider": provider, "model": model}
+
+
+def get_llm_info_for_user(user_id: str):
+    """Get LLM provider and model info for a specific user"""
+    from utils.database_utils import get_mongo_manager
+    mongo = get_mongo_manager()
+    
+    pref = mongo.db['user_preferences'].find_one({"user_id": user_id, "key": "llm_provider"})
+    if pref and pref.get("value"):
+        provider = pref["value"]
+    else:
+        provider = os.getenv("LLM_PROVIDER", "ollama")
+    
+    if provider == "ollama":
+        model = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+    elif provider == "openai":
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    elif provider == "gemini":
+        model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    elif provider == "groq":
+        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
     elif provider == "llama.cpp":
         model = _get_llamacpp_model()
     else:
