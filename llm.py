@@ -32,13 +32,38 @@ class OllamaAdapter(LLMAdapter):
         from langchain_ollama import ChatOllama
         
         model = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         
-        return ChatOllama(
+        print(f"[DEBUG][OllamaAdapter] Model: {model}")
+        print(f"[DEBUG][OllamaAdapter] Base URL: {base_url}")
+        print(f"[DEBUG][OllamaAdapter] Temperature: 0.7, num_predict: 512, timeout: 120")
+        
+        # Check if the model is a thinking/reasoning model that might need special config
+        thinking_models = ['qwen3', 'deepseek-r1', 'qwq']
+        is_thinking_model = any(tm in model.lower() for tm in thinking_models)
+        if is_thinking_model:
+            print(f"[DEBUG][OllamaAdapter] Detected potential thinking model: {model}")
+            print(f"[DEBUG][OllamaAdapter] Note: Thinking models may return content in 'thinking' field instead of main content")
+        
+        # Thinking models need more tokens since they use tokens for reasoning before answering
+        if is_thinking_model:
+            num_predict = 4096
+            print(f"[DEBUG][OllamaAdapter] Using higher num_predict={num_predict} for thinking model")
+        else:
+            num_predict = 512
+        
+        client = ChatOllama(
             model=model,
+            base_url=base_url,
             temperature=0.7,
-            num_predict=512,
-            timeout=120  # Increased timeout to 120 seconds
+            num_predict=num_predict,
+            timeout=180  # Higher timeout for thinking models
         )
+        
+        print(f"[DEBUG][OllamaAdapter] ChatOllama client created successfully")
+        print(f"[DEBUG][OllamaAdapter] Client type: {type(client).__name__}")
+        
+        return client
 
 
 class OpenAIAdapter(LLMAdapter):
@@ -180,11 +205,17 @@ class LLMFactory:
 def get_llm():
     """Get LLM client based on environment configuration"""
     provider = os.getenv("LLM_PROVIDER", "ollama")
-    print(f"Using LLM provider: {provider}")
+    print(f"\n{'='*60}")
+    print(f"[DEBUG][get_llm] Provider: {provider}")
+    print(f"[DEBUG][get_llm] OLLAMA_MODEL env: {os.getenv('OLLAMA_MODEL', 'NOT SET')}")
+    print(f"[DEBUG][get_llm] OLLAMA_BASE_URL env: {os.getenv('OLLAMA_BASE_URL', 'NOT SET')}")
+    print(f"{'='*60}\n")
     
     adapter = LLMFactory.create_adapter(provider)
-    print(f"Successfully created adapter for: {provider}")
-    return adapter.get_client()
+    print(f"[DEBUG][get_llm] Adapter created: {type(adapter).__name__}")
+    client = adapter.get_client()
+    print(f"[DEBUG][get_llm] Client ready: {type(client).__name__}")
+    return client
 
 
 def get_llm_info():
