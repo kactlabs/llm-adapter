@@ -174,3 +174,5 @@ sample_ui/
 *.pt
 *.ckpt
 
+
+.vercel/
